@@ -1,0 +1,99 @@
+---
+-  name: update OS and install packages
+   hosts:  
+#   gather_facts: false
+   tasks:
+   -  name: update OS
+      yum: 
+        name: '*'
+        state: latest
+   -  name: install packages
+      yum: 
+        name: 
+        -  firewalld
+        -  openssh
+        -  yum-utils
+        -  tar
+        -  rsync
+        -  telnet
+        -  curl
+        -  wget 
+        -  open-vm-tools
+        state: latest
+-  name: configure OS
+   hosts: 
+#  gather_facts: false
+   tasks:  
+   -  name: edit selinx config
+      shell: |
+        sed -i s/SELINUX=enforcing/SELINUX=permissive/g /etc/sysconfig/selinux
+        setenforce 0
+   -  name: firewall rich rule for ssh servise 
+      firewalld: 
+        state: enabled
+        immediate: True
+        permanent: True
+        zone: public
+        rich_rule: "{{ item }}"
+      loop:
+      -  rule family="ipv4" source address=192.168.10.1/32 port port="2222" protocol="tcp" accept # '192.168.10.1/32' replace with your ip and subnet mask, this firewalld rich tules for connecting to ssh
+      notify:
+      - start and enable firewalld
+   -  name: edit ssh config file (add group)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowGroups ssh_allow' # 'ssh_allow' group is for connecting to remote host and we add this group in ssh configuration
+        line: 'AllowGroups ssh-allow'
+        state: present
+        insertafter: EOF
+      notify:
+      - start and enable sshd
+   -  name: edit ssh config file (change port)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: 'Port 2222' # replace '2222' with your port number
+        state: present
+        insertafter: '^#Port 22'
+      notify:
+      - start and enable sshd  
+   -  name: add history.sh file
+      copy:
+        remote_src: false
+        src: /configs/history.sh # 'history.sh' file for Bash history, it changes some settings for Bash history
+        dest: /etc/profile.d/history.sh
+   -  name: create group for ssh connection
+      group:
+        name: ssh-allow 
+        system: True
+        state: present
+   -  name: create user for administrations
+      user:
+        name: admin # replace 'admin' with your user_name
+        password: "{{ 'password' | password_hash('sha512') }}" # replace 'password' with your password
+        groups: ssh_conn
+        append: True
+        create_home: True
+        comment: 'user for administration'
+        shell: /bin/bash
+        state: present
+   -  name: edit visudo 
+      lineinfile:
+        path: /etc/sudoers
+        line: "admin ALL=(ALL) NOPASSWD: ALL" 
+        state: present
+        insertafter: EOF
+
+   handlers:
+   -  name: start and enable firewalld
+      service:
+        name: firewalld
+        state: restarted
+        enabled: True
+   -  name: start and enable sshd
+      service:
+        name: sshd
+        state: restarted
+        enabled: True
+
+         
+
